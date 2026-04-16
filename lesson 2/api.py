@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Path
 
 app = FastAPI()
 
@@ -7,9 +7,9 @@ async def welcome() -> dict:
     return {"message": "Hello, World!"}
 
 
-@app.get("/user")
-async def login(username: str, age: int) -> dict:
-    return {"user": username, "age": age}
+# @app.get("/user")
+# async def login(username: str, age: int) -> dict:
+#     return {"user": username, "age": age}
 
 
 @app.get("/hello/{user}")
@@ -28,5 +28,11 @@ async def order(order_id: int) -> dict:
 
 
 @app.get("/products/{product_id}")
-async def products(product_id : int) -> dict:
+async def products(product_id: int) -> dict:
     return {"product": f"Stock number {product_id}"}
+
+
+@app.get("/user/{username}/{age}")
+async def login(username: str = Path(min_length=3, max_length=15, description='Enter your username', examples=['Ilya']),
+                age: int = Path(ge=0, le=100, description="Enter your age")) -> dict:
+    return {"user": username, "age": age}
