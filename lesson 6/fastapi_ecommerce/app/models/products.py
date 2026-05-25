@@ -1,10 +1,14 @@
+from typing import TYPE_CHECKING
+
 from decimal import Decimal
 
 from sqlalchemy import String, Boolean, Integer, Numeric, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-from app.models.categories import Category
+
+if TYPE_CHECKING:
+    from app.models.categories import Category
 
 
 class Product(Base):
