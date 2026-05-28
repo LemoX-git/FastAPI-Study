@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 
 from decimal import Decimal
 
-from sqlalchemy import String, Boolean, Integer, Numeric, ForeignKey
+from sqlalchemy import String, Float, Boolean, Integer, Numeric, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -10,6 +10,7 @@ from app.database import Base
 if TYPE_CHECKING:
     from app.models.categories import Category
     from app.models.users import User
+    from app.models.reviews import ReviewModel
 
 
 class Product(Base):
@@ -24,6 +25,9 @@ class Product(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), nullable=False)
     seller_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    rating: Mapped[float] = mapped_column(Float, nullable=True)
 
     category: Mapped["Category"] = relationship("Category", back_populates="products")
     seller: Mapped["User"] = relationship("User", back_populates="products")
+
+    reviews: Mapped[list["ReviewModel"]] = relationship("ReviewModel", back_populates="product")

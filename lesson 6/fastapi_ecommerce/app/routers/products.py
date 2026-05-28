@@ -4,8 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.categories import Category as CategoryModel
 from app.models.products import Product as ProductModel
-from app.schemas import Product as ProductSchema, ProductCreate
+from app.models.users import User as UserModel
+from app.models.reviews import ReviewModel
+from app.schemas import Product as ProductSchema, ProductCreate, Review as ReviewSchema
 from app.db_depends import get_async_db
+from app.auth import get_current_seller
 
 
 router = APIRouter(
@@ -21,7 +24,11 @@ async def get_all_products(db: AsyncSession = Depends(get_async_db)):
 
 
 @router.post("/", response_model=ProductSchema, status_code=status.HTTP_201_CREATED)
-async def create_product(product: ProductCreate, db: AsyncSession = Depends(get_async_db)):
+async def create_product(
+    product: ProductCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_seller)
+):
     if product.category_id is not None:
         category_exists = await db.scalar(select(CategoryModel.id).where(
                 CategoryModel.id == product.category_id,
@@ -33,7 +40,7 @@ async def create_product(product: ProductCreate, db: AsyncSession = Depends(get_
                                 detail="Category not found or inactive"
                                 )
     
-        db_product = ProductModel(**product.model_dump())
+        db_product = ProductModel(**product.model_dump(), seller_id=current_user.id)
         db.add(db_product)
         await db.commit()
         await db.refresh(db_product)
@@ -80,7 +87,12 @@ async def get_products_by_category(category_id: int, db: AsyncSession = Depends(
 
 
 @router.put("/{product_id}", response_model=ProductSchema, status_code=status.HTTP_200_OK)
-async def update_product(product_id: int, product: ProductCreate, db: AsyncSession = Depends(get_async_db)):
+async def update_product(
+    product_id: int, 
+    product: ProductCreate, 
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_seller)
+):
     if product_id is not None:
         db_product = (await db.scalars(select(ProductModel).where(ProductModel.id == product_id))).first()
         if db_product is None:
@@ -96,6 +108,9 @@ async def update_product(product_id: int, product: ProductCreate, db: AsyncSessi
                                 detail="category_id not found or inactive"
                                 )
         
+        if current_user.id != db_product.seller_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only update your own products")
+        
         await db.execute(
             update(ProductModel)
             .where(ProductModel.id == product_id)
@@ -110,8 +125,12 @@ async def update_product(product_id: int, product: ProductCreate, db: AsyncSessi
                         )
 
 
-@router.delete("/{product_id}", status_code=status.HTTP_200_OK)
-async def delete_product(product_id: int, db: AsyncSession = Depends(get_async_db)):
+@router.delete("/{product_id}", response_model=ProductSchema, status_code=status.HTTP_200_OK)
+async def delete_product(
+    product_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_seller)
+):
     if product_id is not None:
         db_product = await db.scalar(select(ProductModel).where(
                 ProductModel.id == product_id,
@@ -122,14 +141,41 @@ async def delete_product(product_id: int, db: AsyncSession = Depends(get_async_d
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                                 detail="product not found or inactive")
         
+        if current_user.id != db_product.seller_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="You can only update your own products")
+        
         await db.execute(
             update(ProductModel)
             .where(ProductModel.id == product_id)
             .values(is_active = False)
         )
         await db.commit()
-        return {"status": "succes", "message": "Product marked as inactive"}
+        await db.refresh(db_product)
+        
+        return db_product
     
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                         detail="product_id must not be null"
                         )
+
+
+@router.get("/{product_id}/reviews", response_model=list[ReviewSchema], status_code=status.HTTP_200_OK)
+async def get_product_reviews(
+    product_id: int,
+    db: AsyncSession = Depends(get_async_db)
+):
+    product = (await db.scalars(
+        select(ProductModel)
+        .where(ProductModel.id == product_id)
+        .where(ProductModel.is_active == True)
+    )).first()
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    
+    reviews = (await db.scalars(
+        select(ReviewModel)
+        .where(ReviewModel.product_id == product.id)
+        .where(ReviewModel.is_active == True)
+    )).all()
+    return reviews
