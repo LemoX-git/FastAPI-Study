@@ -147,3 +147,12 @@ class Review(BaseModel):
     is_active: bool = Field(..., description="")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProductList(BaseModel):
+    items: list[Product] = Field(description="Products for currnet page")
+    total: int = Field(ge=0, description="Total stock")
+    page: int = Field(ge=1, description="Number current page")
+    page_size: int = Field(ge=1, description="Count of elements on page")
+
+    model_config = ConfigDict(from_attributes=True)

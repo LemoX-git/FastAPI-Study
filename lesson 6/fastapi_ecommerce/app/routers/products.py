@@ -1,14 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.categories import Category as CategoryModel
 from app.models.products import Product as ProductModel
 from app.models.users import User as UserModel
 from app.models.reviews import ReviewModel
-from app.schemas import Product as ProductSchema, ProductCreate, Review as ReviewSchema
+from app.schemas import Product as ProductSchema, ProductCreate, Review as ReviewSchema, ProductList
 from app.db_depends import get_async_db
 from app.auth import get_current_seller
+
+from datetime import date
 
 
 router = APIRouter(
@@ -17,10 +19,76 @@ router = APIRouter(
 )
 
 
-@router.get("/", response_model=list[ProductSchema], status_code=status.HTTP_200_OK)
-async def get_all_products(db: AsyncSession = Depends(get_async_db)):
-    query = select(ProductModel).where(ProductModel.is_active == True)
-    return (await db.scalars(query)).all()
+@router.get("/", response_model=ProductList, status_code=status.HTTP_200_OK)
+async def get_all_products(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    category_id: int | None = Query(
+        None, description="ID категории для фильтрации"),
+    min_price: float | None = Query(
+        None, ge=0, description="Минимальная цена товара"),
+    max_price: float | None = Query(
+        None, ge=0, description="Максимальная цена товара"),
+    in_stock: bool | None = Query(
+        None, description="true — только товары в наличии, false — только без остатка"),
+    max_created_date: date | None = Query(
+        None, description="Максимальное время создания для фильтрации"
+    ),
+    min_created_date: date | None = Query(
+        None, description="Минимальное время создания для фильтрации"
+    ),
+    seller_id: int | None = Query(
+        None, description="ID продавца для фильтрации"),
+    db: AsyncSession = Depends(get_async_db),
+):
+    if min_price is not None and max_price is not None and min_price > max_price:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="min_price не может быть больше max_price",
+        )
+    if min_created_date is not None and max_created_date is not None and min_created_date > max_created_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="min_created_date не может быть больше max_created_date",
+        )
+    
+    # Формируем список фильтров
+    filters = [ProductModel.is_active == True]
+
+    if category_id is not None:
+        filters.append(ProductModel.category_id == category_id)
+    if min_price is not None:
+        filters.append(ProductModel.price >= min_price)
+    if max_price is not None:
+        filters.append(ProductModel.price <= max_price)
+    if in_stock is not None:
+        filters.append(ProductModel.stock > 0 if in_stock else ProductModel.stock == 0)
+    if seller_id is not None:
+        filters.append(ProductModel.seller_id == seller_id)
+    if max_created_date is not None:
+        filters.append(ProductModel.created_at <= max_created_date)
+    if min_created_date is not None:
+        filters.append(ProductModel.created_at >= min_created_date)
+    
+    total_products_count = (await db.scalar(
+        select(func.count(ProductModel.id))
+        .where(*filters)
+    )) or 0
+
+    items = (await db.scalars(
+        select(ProductModel)
+        .where(*filters)
+        .order_by(ProductModel.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )).all()
+
+    return {
+        "items": items,
+        "total": total_products_count,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.post("/", response_model=ProductSchema, status_code=status.HTTP_201_CREATED)
