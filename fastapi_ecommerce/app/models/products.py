@@ -1,5 +1,12 @@
 from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from app.models.categories import Category
+    from app.models.users import User
+    from app.models.reviews import ReviewModel
+    from app.models.cart_items import CartItem
+    from app.models.orders import OrderItem
+
 from decimal import Decimal
 from datetime import datetime
 
@@ -9,14 +16,13 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 
 from app.database import Base
 
-if TYPE_CHECKING:
-    from app.models.categories import Category
-    from app.models.users import User
-    from app.models.reviews import ReviewModel
-
 
 class Product(Base):
     __tablename__ = "products"
+
+    __table_args__ = (
+        Index("ix_products_tsv_gin", "tsv", postgresql_using="gin"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -46,9 +52,6 @@ class Product(Base):
 
     category: Mapped["Category"] = relationship("Category", back_populates="products")
     seller: Mapped["User"] = relationship("User", back_populates="products")
-
     reviews: Mapped[list["ReviewModel"]] = relationship("ReviewModel", back_populates="product")
-
-    __table_args__ = (
-        Index("ix_products_tsv_gin", "tsv", postgresql_using="gin"),
-    )
+    cart_items: Mapped[list["CartItem"]] = relationship("CartItem", back_populates="product", cascade="all, delete-orphan")
+    order_items: Mapped[list["OrderItem"]] = relationship("OrderItem", back_populates="product")
