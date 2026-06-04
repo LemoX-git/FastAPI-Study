@@ -20,3 +20,9 @@ alembic/__pycache__/
 alembic/versions/__pycache__/
 
 *.ini
+
+# Images
+*.jpeg
+*.png
+*.webp
+*.jpg
